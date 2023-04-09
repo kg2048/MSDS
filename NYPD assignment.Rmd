@@ -1,0 +1,138 @@
+---
+title: "NYPD assignment"
+output: pdf_document
+date: "2023-03-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+```{r  echo = FALSE , message = FALSE}
+library(tidyverse)
+library(lubridate)
+
+```
+
+## NYPD Shooting analysis
+
+This document uses the dataset NYPD Shooting Incident Data from Data.gov. It contains a list of every shooting incident that occurred in NYC from 2006 through the end of 2022.
+
+ <https://catalog.data.gov/dataset/nypd-shooting-incident-data-historic>.
+
+
+```{r import}
+# read the csv
+nypd <- read_csv("https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD")
+```
+\newpage 
+# Creating datasets for analysing the data
+```{r analysis}
+#dataset by BORO
+nypd_boro <-nypd %>% group_by(BORO, LOCATION_DESC) %>%   
+  summarize(cases = n()) %>% 
+  select(BORO, LOCATION_DESC, cases) %>% 
+  ungroup()
+
+#dataset by location
+nypd_loc <-nypd %>%filter(!is.na(LOCATION_DESC))
+
+#renaming some of the values 
+nypd_loc$LOCATION_DESC <- recode(nypd_loc$LOCATION_DESC,
+"MULTI DWELL - APT BUILD" = "MULTI DWELL",
+"MULTI DWELL - PUBLIC HOUS" = "MULTI DWELL",
+"BAR/NIGHT CLUB" = "CLUB",
+"BEAUTY/NAIL SALON" = "SALON",
+"COMMERCIAL BLDG" = "COMM BLDG",
+"GROCERY/BODEGA" = "GROCERY",
+"PVT HOUSE" = "HOUSE",
+"RESTAURANT/DINER" = "REST/DINER")
+
+# Case count by location 
+nypd_loc <- nypd_loc  %>%filter(!is.na(LOCATION_DESC))%>%
+group_by(VIC_SEX, LOCATION_DESC) %>%
+summarize(cases = n()) %>%
+select( VIC_SEX, LOCATION_DESC, cases) %>%
+ungroup()
+
+
+# Dataset by victim's sex in each Boro
+nypd_vic_sex <-nypd %>% group_by(VIC_SEX, BORO) %>% 
+  summarize(cases = n()) %>% 
+  select( VIC_SEX, BORO, cases) %>% 
+  ungroup()
+
+
+#dataset by Year
+nypd_date <-nypd %>% 
+  mutate(OCCUR_YEAR = year(as.Date(OCCUR_DATE, "%m/%d/%Y"))) %>% 
+  group_by(VIC_SEX, OCCUR_YEAR) %>% 
+  summarize(cases = n()) %>% 
+  select( VIC_SEX, OCCUR_YEAR, cases) %>% 
+  ungroup()
+```
+\newpage
+
+# Location with more than 100 cases 
+```{r viewbyloc}
+#selecting the location with more than 100 cases
+
+nypd_loc %>% filter(cases > 100) %>% 
+  ggplot(aes(x= LOCATION_DESC, y = cases)) +   
+  geom_point(aes(color = VIC_SEX)) +
+  labs(title = "Location with more than 100 cases")
+```
+\newpage
+
+# View the number of cases in each year starting from 2006 until 2022
+```{r viewbyyear}
+
+nypd_date %>% ggplot(aes(x= OCCUR_YEAR, y = cases,color = VIC_SEX)) +    
+  geom_point() +
+  labs(title = "Cases by Year")
+``` 
+
+\newpage
+
+# Data Model
+Generating a model to determine the percentage of cases for each boro against the total number of cases 
+
+```{r model}
+# using the vic_sex dataset to create a model 
+nypd_vic_sex <- nypd_vic_sex %>% 
+  mutate(total_count = sum(cases), 
+         case_pct = cases/total_count * 100)
+
+# Determine the total number of cases for each BORO
+nypd_vic_sex <- nypd_vic_sex  %>% group_by(BORO) %>% 
+  mutate(boro_count = sum(cases), boro_pct = cases/boro_count * 100) %>% 
+  ungroup()
+
+#creating a model 
+mod <- lm(boro_pct ~ case_pct , data = nypd_vic_sex)
+
+#Summary of the model 
+summary(mod)
+
+#creating the prediction for the model 
+nypd_mod_totals <- nypd_vic_sex %>%  mutate(pred = predict(mod))
+
+# Plotting the model to visualize the data 
+nypd_mod_totals %>% ggplot() +
+  geom_point(aes(x=case_pct, y = boro_pct), color = "green" ) + 
+  geom_point(aes(x=case_pct, y=pred), color = "brown") +
+  labs(title = "Data Model")
+```
+\newpage
+
+# Bias
+
+For me the whole of NYC looks unsafe. I'm scared to even visit the city. NYC schools or 
+universities have been safer unlike the other places in the US. 
+USA needs to control gun violence all over the country!!
+
+While working on this data it shows that crimes committed on males is more when 
+compared to females.
+Starting from 2015 the crime on men was declining and increased drastically again in 2020.
+If the state department was implementing certain measures between 2015 - 2020 that 
+reduced the crimes during that period, it should be re-enforced after the pandemic.
